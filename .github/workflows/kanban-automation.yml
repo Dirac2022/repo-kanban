@@ -13,37 +13,115 @@ jobs:
       - name: Move linked issue to 'In Progress'
         uses: actions/github-script@v6
         with:
+          github-token: ${{secrets.GITHUB_TOKEN}} # Asegúrate de pasar el token
           script: |
             const projectName = "Devops-agile";
-            const columnName = "In Progress";
+            const targetColumnName = "In Progress"; // Nombre de la columna a la que quieres mover
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
 
-            // Fetch all projects for the repository
-            const { data: projects } = await github.rest.projects.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
+            // 1. Extraer el número de issue del cuerpo del PR
+            const prBody = context.payload.pull_request.body;
+            if (!prBody) {
+              console.log("Pull request body is empty. No issue to process.");
+              return;
+            }
+            
+            // Busca patrones como "Closes #123", "Fixes #123", etc.
+            const issueNumberMatch = prBody.match(/(?:Closes|Fixes|Resolves|closes|fixes|resolves)\s+#(\d+)/);
+            if (!issueNumberMatch || !issueNumberMatch[1]) {
+              console.log("No issue number found in PR body (e.g., 'Closes #123').");
+              return;
+            }
+            const issueNumber = parseInt(issueNumberMatch[1]);
+            console.log(`Extracted issue number: ${issueNumber}`);
 
-            // Find the project by name
-            const project = projects.find(p => p.name === projectName);
-            if (!project) {
-              throw new Error(`Project "${projectName}" not found`);
+            // 2. Obtener el ID del Issue (no solo el número)
+            // No necesitamos el ID global del issue para crear la tarjeta, solo el número
+            // para buscar la tarjeta o el issue_id del issue si el proyecto es a nivel de organización.
+            // Para createCard, el content_id es el ID del issue.
+            // Vamos a obtener la información del issue para tener su ID global (node_id) si fuera necesario,
+            // y su id numérico (que es `issueNumber`).
+            let issueNodeId;
+            let issueGlobalId;
+            try {
+              const { data: issue } = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: issueNumber,
+              });
+              issueNodeId = issue.node_id; // ID global para algunas APIs más nuevas de projects
+              issueGlobalId = issue.id;     // ID numérico global del issue
+              console.log(`Found issue: ID=${issueGlobalId}, Node_ID=${issueNodeId}`);
+            } catch (error) {
+              console.error(`Could not fetch issue #${issueNumber}: ${error.message}`);
+              // Si no se puede obtener el issue, no podemos agregarlo al proyecto.
+              // Esto podría deberse a que el issue no existe o está en otro repositorio.
+              // Podrías lanzar un error aquí si lo prefieres: throw new Error(...)
+              return; 
             }
 
-            // Fetch all columns for the project
+
+            // 3. Encontrar el Proyecto
+            const { data: projects } = await github.rest.projects.listForRepo({
+              owner,
+              repo,
+            });
+            const project = projects.find(p => p.name === projectName);
+            if (!project) {
+              console.error(`Project "${projectName}" not found.`);
+              throw new Error(`Project "${projectName}" not found`);
+            }
+            console.log(`Found project "${projectName}" with ID: ${project.id}`);
+
+            // 4. Encontrar la Columna de Destino ("In Progress")
             const { data: columns } = await github.rest.projects.listColumns({
               project_id: project.id,
             });
+            const targetColumn = columns.find(c => c.name === targetColumnName);
+            if (!targetColumn) {
+              console.error(`Column "${targetColumnName}" not found in project "${projectName}".`);
+              throw new Error(`Column "${targetColumnName}" not found`);
+            }
+            console.log(`Found target column "${targetColumnName}" with ID: ${targetColumn.id}`);
 
-            // Find the column by name
-            const column = columns.find(c => c.name === columnName);
-            if (!column) {
-              throw new Error(`Column "${columnName}" not found`);
+            // 5. Buscar si ya existe una tarjeta para este issue en el proyecto
+            let existingCardId = null;
+            for (const column of columns) {
+              const { data: cards } = await github.rest.projects.listCards({
+                column_id: column.id,
+              });
+              const card = cards.find(c => c.content_url && c.content_url.endsWith(`/issues/${issueNumber}`));
+              if (card) {
+                existingCardId = card.id;
+                console.log(`Found existing card for issue #${issueNumber} with ID: ${existingCardId} in column "${column.name}"`);
+                break;
+              }
             }
 
-            // Move the linked issue to the column
-            const issueNumber = context.payload.pull_request.body.match(/#\d+/)[0].substring(1);
-            await github.rest.projects.createCard({
-              column_id: column.id,
-              content_id: context.payload.pull_request.id,
-              content_type: "Issue",
-            });
+            // 6. Mover la tarjeta existente o crear una nueva en la columna de destino
+            if (existingCardId) {
+              // Si la tarjeta ya está en la columna correcta, no hacer nada.
+              const {data: cardDetails} = await github.rest.projects.getCard({card_id: existingCardId});
+              if (cardDetails.column_id === targetColumn.id) {
+                console.log(`Card for issue #${issueNumber} is already in column "${targetColumnName}". No action needed.`);
+                return;
+              }
+              // Mover la tarjeta existente
+              console.log(`Moving existing card ID ${existingCardId} for issue #${issueNumber} to column "${targetColumnName}"`);
+              await github.rest.projects.moveCard({
+                card_id: existingCardId,
+                position: "top", // o 'bottom'
+                column_id: targetColumn.id,
+              });
+              console.log(`Card for issue #${issueNumber} moved successfully to "${targetColumnName}".`);
+            } else {
+              // Crear una nueva tarjeta para el issue en la columna de destino
+              console.log(`No existing card found for issue #${issueNumber}. Creating a new card in column "${targetColumnName}".`);
+              await github.rest.projects.createCard({
+                column_id: targetColumn.id,
+                content_id: issueGlobalId, // Usar el ID global del issue
+                content_type: "Issue",
+              });
+              console.log(`New card for issue #${issueNumber} created successfully in "${targetColumnName}".`);
+            }
