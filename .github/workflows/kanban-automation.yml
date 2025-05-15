@@ -11,10 +11,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Move linked issue to 'In Progress'
-        # Esta accion busca issues vinculados en el cuerpo del PR (ej "Closes #123", "Fixes #XYZ")
-        # y los mueve en el proyecto especificado
-        uses: alex-page/github-project-automation-plus@v0.8.3 # Verifica siempre la ultimo version de la accion
+        uses: actions/github-script@v6
         with:
-          project: Devops-agile
-          column: In Progress
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const projectName = "Devops-agile";
+            const columnName = "In Progress";
+
+            // Fetch all projects for the repository
+            const { data: projects } = await github.rest.projects.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            // Find the project by name
+            const project = projects.find(p => p.name === projectName);
+            if (!project) {
+              throw new Error(`Project "${projectName}" not found`);
+            }
+
+            // Fetch all columns for the project
+            const { data: columns } = await github.rest.projects.listColumns({
+              project_id: project.id,
+            });
+
+            // Find the column by name
+            const column = columns.find(c => c.name === columnName);
+            if (!column) {
+              throw new Error(`Column "${columnName}" not found`);
+            }
+
+            // Move the linked issue to the column
+            const issueNumber = context.payload.pull_request.body.match(/#\d+/)[0].substring(1);
+            await github.rest.projects.createCard({
+              column_id: column.id,
+              content_id: context.payload.pull_request.id,
+              content_type: "Issue",
+            });
