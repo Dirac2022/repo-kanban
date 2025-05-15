@@ -8,13 +8,13 @@ on:
 
 jobs:
   move_issue_to_in_progress:
-  runs-on: ubuntu-latest
-  steps:
-    - name: Move linked issue to 'In Progress'
-      # Esta accion busca issues vinculados en el cuerpo del PR (ej "Closes #123", "Fixes #XYZ")
-      # y los mueve en el proyecto especificado
-      uses: alex-page/github-project-automation-plus@v0.8.3 # Verifica siempre la ultimo version de la accion
-      with:
-        project: Devops-agile
-        column: In Progress
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move linked issue to 'In Progress'
+        # Esta accion busca issues vinculados en el cuerpo del PR (ej "Closes #123", "Fixes #XYZ")
+        # y los mueve en el proyecto especificado
+        uses: alex-page/github-project-automation-plus@v0.8.3 # Verifica siempre la ultimo version de la accion
+        with:
+          project: Devops-agile
+          column: In Progress
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
