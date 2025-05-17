@@ -1,68 +1,92 @@
-name: Kanban Project Automation (Projects V2)
+name: Move Issue to In Progress in Project Next-gen when PR is opened
 
 on:
   pull_request:
-    types:
-      - opened
-      - reopened
+    types: [opened, ready_for_review]
 
 jobs:
-  move_linked_issue_to_in_progress: # Nombre del job
-    name: Move Linked Issue to In Progress # Nombre descriptivo que aparecerá en la UI de Actions
+  move-issue-in-project:
     runs-on: ubuntu-latest
     steps:
-      # Paso 1: Extraer el número de issue del cuerpo del PR y obtener su Node ID
-      - name: Extract issue properties
-        id: get_issue_props # ID de este paso para referenciar sus outputs
-        uses: actions/github-script@v6
+      - name: Extract referenced issues from PR body
+        id: extract_issues
+        uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const prBody = context.payload.pull_request.body;
-            if (!prBody) {
-              console.log("Pull request body is empty. Cannot find linked issue.");
-              core.setOutput("issue_node_id", ""); // Establecer output vacío
-              return;
-            }
-            
-            // Busca patrones como "Closes #123", "Fixes #123", etc.
-            const issueNumberMatch = prBody.match(/(?:Closes|Fixes|Resolves|closes|fixes|resolves)\s+#(\d+)/);
-            if (!issueNumberMatch || !issueNumberMatch[1]) {
-              console.log("No linked issue number found in PR body (e.g., 'Closes #123').");
-              core.setOutput("issue_node_id", ""); // Establecer output vacío
-              return;
-            }
-            const issueNumber = parseInt(issueNumberMatch[1]);
-            console.log(`Extracted issue number from PR body: ${issueNumber}`);
+            const prBody = context.payload.pull_request.body || '';
+            const issueNumbers = [...prBody.matchAll(/#(\d+)/g)].map(m => m[1]);
+            core.setOutput('issues', JSON.stringify(issueNumbers));
 
-            try {
-              // Obtener la información del issue para conseguir su node_id global
-              const { data: issue } = await github.rest.issues.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo, // Esto se resolverá a 'repo-kanban' automáticamente
-                issue_number: issueNumber,
+      - name: Move issues in Project Next-gen
+        if: steps.extract_issues.outputs.issues != '[]'
+        env:
+          GH_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+        run: |
+          echo "${{ steps.extract_issues.outputs.issues }}" > issue_numbers.json
+          node <<'EOF'
+          const fs = require('fs');
+          const issues = JSON.parse(fs.readFileSync('issue_numbers.json'));
+          if (!issues.length) { process.exit(0); }
+          const projectId = "PVT_kwHOBov9rM4A5AKh";
+          const statusFieldId = "PVTSSF_lAHOBov9rM4A5AKhzgt3_L0";
+          const inProgressOptionId = "47fc9ee4";
+
+          async function run() {
+            for (const issueNumber of issues) {
+              // Busca el node_id del issue
+              let res = await fetch(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/issues/${issueNumber}`, {
+                headers: { Authorization: `Bearer ${process.env.GH_TOKEN}` }
               });
-              console.log(`Found issue: #${issue.number} with Node_ID: ${issue.node_id}`);
-              core.setOutput("issue_node_id", issue.node_id); // Pasar el node_id del issue al siguiente paso
-            } catch (error) {
-              console.error(`Could not fetch details for issue #${issueNumber}. Error: ${error.message}`);
-              core.setOutput("issue_node_id", ""); // Establecer output vacío en caso de error
-              // Puedes decidir si el workflow debe fallar si el issue no se encuentra:
-              // core.setFailed(`Could not fetch details for issue #${issueNumber}: ${error.message}`);
+              const issue = await res.json();
+              const contentId = issue.node_id;
+              // Busca el item en el project
+              const query = `
+                query {
+                  projectV2(id: "${projectId}") {
+                    items(first: 100, orderBy: {field: CREATED_AT, direction: DESC}) {
+                      nodes {
+                        id
+                        content {
+                          ... on Issue { id number }
+                        }
+                      }
+                    }
+                  }
+                }`;
+              res = await fetch('https://api.github.com/graphql', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${process.env.GH_TOKEN}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query })
+              });
+              const data = await res.json();
+              const item = data.data.projectV2.items.nodes.find(n => n.content && n.content.number == issueNumber);
+              if (!item) { console.log(`Issue #${issueNumber} no está en el proyecto`); continue; }
+              // Actualiza el campo Status a "In Progress"
+              const mutation = `
+                mutation {
+                  updateProjectV2ItemFieldValue(
+                    input: {
+                      projectId: "${projectId}"
+                      itemId: "${item.id}"
+                      fieldId: "${statusFieldId}"
+                      value: { singleSelectOptionId: "${inProgressOptionId}" }
+                    }
+                  ) { projectV2Item { id } }
+                }
+              `;
+              await fetch('https://api.github.com/graphql', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${process.env.GH_TOKEN}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query: mutation })
+              });
+              console.log(`Issue #${issueNumber} movido a In Progress`);
             }
-
-      # Paso 2: Añadir/Mover el issue en el Proyecto V2 y establecer su estado a "In Progress"
-      - name: Add issue to project and set status
-        # Solo ejecutar este paso si el paso anterior encontró un issue_node_id
-        if: steps.get_issue_props.outputs.issue_node_id != ''
-        uses: actions/add-to-project@v1.0.0 # Puedes verificar la última versión en GitHub Marketplace
-        with:
-          # URL completa de tu proyecto. Reemplaza si es diferente, pero esta es la que me diste.
-          project-url: https://github.com/users/Dirac2022/projects/3
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          # El node_id del issue o PR que se va a añadir/actualizar en el proyecto.
-          # Lo obtenemos del output del paso anterior.
-          labeled: ${{ steps.get_issue_props.outputs.issue_node_id }}
-          # Aquí es donde estableces la columna.
-          # DEBES VERIFICAR que tu campo de estado se llame "Status" y la opción sea "In Progress".
-          fields: '{"Status": "In Progress"}'
+          }
+          run();
+          EOF
