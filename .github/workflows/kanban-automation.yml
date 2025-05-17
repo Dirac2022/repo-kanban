@@ -1,4 +1,4 @@
-name: Kanban Project Automation
+name: Kanban Project Automation (Projects V2)
 
 on:
   pull_request:
@@ -7,43 +7,62 @@ on:
       - reopened
 
 jobs:
-  move_issue_to_in_progress:
+  move_linked_issue_to_in_progress: # Nombre del job
+    name: Move Linked Issue to In Progress # Nombre descriptivo que aparecerá en la UI de Actions
     runs-on: ubuntu-latest
     steps:
-      - name: Move linked issue to 'In Progress'
+      # Paso 1: Extraer el número de issue del cuerpo del PR y obtener su Node ID
+      - name: Extract issue properties
+        id: get_issue_props # ID de este paso para referenciar sus outputs
         uses: actions/github-script@v6
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const projectName = "Devops-agile";
-            const columnName = "In Progress";
+            const prBody = context.payload.pull_request.body;
+            if (!prBody) {
+              console.log("Pull request body is empty. Cannot find linked issue.");
+              core.setOutput("issue_node_id", ""); // Establecer output vacío
+              return;
+            }
+            
+            // Busca patrones como "Closes #123", "Fixes #123", etc.
+            const issueNumberMatch = prBody.match(/(?:Closes|Fixes|Resolves|closes|fixes|resolves)\s+#(\d+)/);
+            if (!issueNumberMatch || !issueNumberMatch[1]) {
+              console.log("No linked issue number found in PR body (e.g., 'Closes #123').");
+              core.setOutput("issue_node_id", ""); // Establecer output vacío
+              return;
+            }
+            const issueNumber = parseInt(issueNumberMatch[1]);
+            console.log(`Extracted issue number from PR body: ${issueNumber}`);
 
-            // Fetch all projects for the repository
-            const { data: projects } = await github.rest.projects.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-
-            // Find the project by name
-            const project = projects.find(p => p.name === projectName);
-            if (!project) {
-              throw new Error(`Project "${projectName}" not found`);
+            try {
+              // Obtener la información del issue para conseguir su node_id global
+              const { data: issue } = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo, // Esto se resolverá a 'repo-kanban' automáticamente
+                issue_number: issueNumber,
+              });
+              console.log(`Found issue: #${issue.number} with Node_ID: ${issue.node_id}`);
+              core.setOutput("issue_node_id", issue.node_id); // Pasar el node_id del issue al siguiente paso
+            } catch (error) {
+              console.error(`Could not fetch details for issue #${issueNumber}. Error: ${error.message}`);
+              core.setOutput("issue_node_id", ""); // Establecer output vacío en caso de error
+              // Puedes decidir si el workflow debe fallar si el issue no se encuentra:
+              // core.setFailed(`Could not fetch details for issue #${issueNumber}: ${error.message}`);
             }
 
-            // Fetch all columns for the project
-            const { data: columns } = await github.rest.projects.listColumns({
-              project_id: project.id,
-            });
-
-            // Find the column by name
-            const column = columns.find(c => c.name === columnName);
-            if (!column) {
-              throw new Error(`Column "${columnName}" not found`);
-            }
-
-            // Move the linked issue to the column
-            const issueNumber = context.payload.pull_request.body.match(/#\d+/)[0].substring(1);
-            await github.rest.projects.createCard({
-              column_id: column.id,
-              content_id: context.payload.pull_request.id,
-              content_type: "Issue",
-            });
+      # Paso 2: Añadir/Mover el issue en el Proyecto V2 y establecer su estado a "In Progress"
+      - name: Add issue to project and set status
+        # Solo ejecutar este paso si el paso anterior encontró un issue_node_id
+        if: steps.get_issue_props.outputs.issue_node_id != ''
+        uses: actions/add-to-project@v1.0.0 # Puedes verificar la última versión en GitHub Marketplace
+        with:
+          # URL completa de tu proyecto. Reemplaza si es diferente, pero esta es la que me diste.
+          project-url: https://github.com/users/Dirac2022/projects/3
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # El node_id del issue o PR que se va a añadir/actualizar en el proyecto.
+          # Lo obtenemos del output del paso anterior.
+          labeled: ${{ steps.get_issue_props.outputs.issue_node_id }}
+          # Aquí es donde estableces la columna.
+          # DEBES VERIFICAR que tu campo de estado se llame "Status" y la opción sea "In Progress".
+          fields: '{"Status": "In Progress"}'
