@@ -24,7 +24,6 @@ jobs:
         run: |
           echo "${{ steps.extract_issues.outputs.issues }}" > issue_numbers.json
           node <<'EOF'
-          const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
           const fs = require('fs');
           const issues = JSON.parse(fs.readFileSync('issue_numbers.json'));
           if (!issues.length) { process.exit(0); }
