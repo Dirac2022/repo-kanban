@@ -1,5 +1,6 @@
 # repo-kanban
 
+
 ##### Ejercicio 3: Automatización de Kanban board con GitHub Actions
 
 **Objetivo:** Aprender a automatizar tareas en el Kanban board usando GitHub Actions.
@@ -10,3 +11,9 @@
 2. Crea un archivo de configuración de GitHub Actions en la carpeta `.github/workflows` que defina estas reglas de automatización.
 
 **Resultado esperado:** Las historias de usuario se mueven automáticamente en el Kanban board según las reglas definidas, como cambiar de columna al asociar un pull request o al cerrar un issue.
+
+
+#### Actividad 18
+##### Parte 2
+Se trabajo mucho con 3  historias, se fueron asignando a una sola persona y se movian d otra columna;   
+mientras se simulaba un flujo de trabajo diario de un desarrollador.
