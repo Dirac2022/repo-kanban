@@ -62,8 +62,8 @@ assignees: ''
 - La estructura actual del repo `repo-kanban`
 ```text     
 ├── .github/
-|		└── ISSUE_TEMPLATE/
-|			└── user-story.md
+|	└── ISSUE_TEMPLATE/
+|		└── user-story.md
 ```
 
 
