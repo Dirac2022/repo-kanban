@@ -1,19 +1,69 @@
-# repo-kanban
+
+## Actividad 17
 
 
-##### Ejercicio 3: Automatización de Kanban board con GitHub Actions
+### Parte 1
 
-**Objetivo:** Aprender a automatizar tareas en el Kanban board usando GitHub Actions.
+- Se ha creado un repo específico para desarrollar las Actividades 17 y 18: `https://github.com/Dirac2022/repo-kanban.git`. 
+- En la página principal del repositorio se ingresó a la pestaña `Projects` y se ejecutaron los pasos de la guía.
 
-**Instrucciones:**
+- El orden de las columnas en el *tablero Kanban* es el siguiente:	
+	1. `New Issues`
+	2. `Icebox`
+	3. `Product Backlog`
+	4. `Sprint Backlogs`
+	5. `In Progress`
+	6. `Review/QA`
+	7. `Done`
 
-1. Configura un flujo de trabajo de GitHub Actions que automáticamente mueva las historias de usuario entre columnas del Kanban board basado en eventos. Por ejemplo, mover automáticamente una historia a "In Progress" cuando se asocia un pull request.
-2. Crea un archivo de configuración de GitHub Actions en la carpeta `.github/workflows` que defina estas reglas de automatización.
 
-**Resultado esperado:** Las historias de usuario se mueven automáticamente en el Kanban board según las reglas definidas, como cambiar de columna al asociar un pull request o al cerrar un issue.
+### Parte 2
+
+- El issue template que se uso para las historias de usuario:
+
+```markdown
+---
+name: User story
+about: Template para crear historias de usuario
+title: ''
+labels: ''
+assignees: ''
+
+---
+
+---
+name: User Story
+about: Template for creating user stories
+title: 'User Story: [Short Description]'
+labels: ''
+assignees: ''
+
+---
+
+**As a** [role]
+**I need** [feature]
+**So that** [benefit]
+
+### Details
+[Provide more details about the story, if necessary]
+
+### Assumptions
+[List any assumptions made when creating this story]
+
+### Acceptance Criteria
+- [ ] Criteria 1
+- [ ] Criteria 2
+- [ ] Criteria 3
+
+### Notes
+[Any additional notes or comments]
+```
+
+- La estructura actual del repo `repo-kanban`
+```text     
+├── .github/
+|		└── ISSUE_TEMPLATE/
+|			└── user-story.md
+```
 
 
-#### Actividad 18
-##### Parte 2
-Se trabajo mucho con 3  historias, se fueron asignando a una sola persona y se movian d otra columna;   
-mientras se simulaba un flujo de trabajo diario de un desarrollador.
